@@ -1,65 +1,79 @@
 # markov_premodel_prints_eps.r 
 
-markov_premodel_prints_eps <- function( celltype, ps, 
-                                        vector.tissues,
-                                        q12_fixed_, q12_, 
-                                        model.name, model.ver, states_5,
-                                        complem_tissues = c(),
-                                        f_pb.week0i = NA, f_eps = 0.143,           # 0.143 week = 1 day
-                                        limit_dist_w12 = TRUE,
-                                        f_host_donor_rate_ = NA,
-                                        f_use_wghs_ = NA, f_use_hdr2_ = NA, 
-                                        f_brf = NA, f_max_flow_to_N3_ = NA, 
-                                        NORMALIZE = FALSE,
-                                        ND = NA )
-{                             
-  get_normalized_proportion <- function( parabio.data.raw.i,
-                                         cellstate, host_or_donor, p_norm ) {
-    parabio.data.raw.i_n <- parabio.data.raw.i
-    
-      parabio.data.raw.i_n[ , sprintf(                                         # assign normalized values to column e.g. host.celltype.naive
-        "%s.celltype.%s", "host", cellstate ) ] <-
-        ifelse( ( ( parabio.data.raw.i[ , sprintf(                             # if the sum of e.g. naive cells subset is > 0, i.e. DO NOT DIVIDE BY ZERO!       
-            "%s.celltype.%s", "host", cellstate ) ] + 
-            parabio.data.raw.i[ , sprintf( 
-              "%s.celltype.%s", "donor", cellstate ) ] ) %>% 
-              unlist %>% as.vector() ) > 0,   
-          
-          ( p_norm * 
-              parabio.data.raw.i[ , sprintf( 
-                "%s.celltype.%s", "host", cellstate ) ] / (             # e.g.    host.celltype.naive <- 
-                  parabio.data.raw.i[ , sprintf(                               #  <- p_norm * ( host.celltype.naive / ( host.celltype.naive + donor.celltype.naive ) )
-                    "%s.celltype.%s", "host", cellstate ) ] + 
-                    parabio.data.raw.i[ , sprintf( 
-                      "%s.celltype.%s", "donor", cellstate ) ] ) ) %>% 
-            unlist() %>% as.numeric(), 
-          
-          0 
-          )
-      
-      parabio.data.raw.i_n[ , sprintf(                                         # assign normalized values to column e.g. host.celltype.naive
-        "%s.celltype.%s", "donor", cellstate ) ] <-
-        ifelse( ( ( parabio.data.raw.i[ , sprintf(                             # if the sum of e.g. naive cells subset is > 0, i.e. DO NOT DIVIDE BY ZERO!       
-          "%s.celltype.%s", "host", cellstate ) ] + 
-            parabio.data.raw.i[ , sprintf( 
-              "%s.celltype.%s", "donor", cellstate ) ] ) %>% 
-            unlist() %>% as.vector() ) > 0,   
-          
-          ( p_norm * 
-              parabio.data.raw.i[ , sprintf( 
-                "%s.celltype.%s", "donor", cellstate ) ] / (             # e.g.    host.celltype.naive <- 
-                  parabio.data.raw.i[ , sprintf(                               #  <- p_norm * ( host.celltype.naive / ( host.celltype.naive + donor.celltype.naive ) )
-                    "%s.celltype.%s", "host", cellstate ) ] + 
-                    parabio.data.raw.i[ , sprintf( 
-                      "%s.celltype.%s", "donor", cellstate ) ] )  ) %>% 
-            unlist %>% as.numeric(), 
-          
-          0 
-        )
-      return( parabio.data.raw.i_n )
-    }
+markov_premodel_prints_eps <- function( m = m, 
+                                        vector_tissues,
+                                        complem_tissues = c() )
+{ 
+  ps <- m$ps
+  celltype <- m$celltype
+  st <- m$st
+  model_ver = st$MODEL_VER; 
+  f_pb.week0i = st$PB_WEEK0I; f_eps = st$EPS;
+  q12_fixed_ = st$Q12_IS_FIXED; q12_ = st$Q12_VALUE;
+  ## NOTE: move count_type to some GLOBAL variables?
+  count_type = "Median";                                                        
   
-  normalize_tissue_states_in_time <- function( parabio.data.raw.i ) {
+  figs_dir <- get_path( "figs_m", m = m )
+  if ( !dir.exists( figs_dir ) ) { dir.create( figs_dir, recursive = TRUE ) }
+  figs_traj_dir <- get_path( "figs_m_traj", m = m )
+  if ( !dir.exists( figs_traj_dir ) ) { dir.create( figs_traj_dir, 
+                                                    recursive = TRUE ) }
+  figs_dwell_dir <- get_path( "figs_m_dwell", m = m )
+  if ( !dir.exists( figs_dwell_dir ) ) { dir.create( figs_dwell_dir, 
+                                                     recursive = TRUE ) }
+  figs_rda_dir <- get_path( "figs_m_rda", m = m )
+  if ( !dir.exists( figs_rda_dir ) ) { dir.create( figs_rda_dir, 
+                                                   recursive = TRUE ) }
+  figs_diag_dir <- get_path( "figs_m_diag", m = m )
+  if ( !dir.exists( figs_diag_dir ) ) { dir.create( figs_diag_dir, 
+                                                    recursive = TRUE ) }
+  limit_dist_w12 = TRUE;
+  
+  get_normalized_proportion <- function( parabio.data.raw.i,
+                                         cellstate, host_or_donor, p_norm )
+  {
+    parabio.data.raw.i_n <- parabio.data.raw.i
+    host.celltype.cellstate <- sprintf( "%s.celltype.%s", "host", cellstate )
+    donor.celltype.cellstate <- sprintf( "%s.celltype.%s", "donor", cellstate )
+    
+    # assign normalized values to column e.g. host.celltype.naive
+    # if the sum of e.g. naive cells subset is > 0, i.e. DO NOT DIVIDE BY ZERO!       
+    parabio.data.raw.i_n[ , host.celltype.cellstate ] <-
+      ifelse( 
+        ( ( parabio.data.raw.i[ , host.celltype.cellstate ] + 
+              parabio.data.raw.i[ , donor.celltype.cellstate ] ) %>% 
+            unlist %>% as.vector() ) > 0,   
+        
+        # e.g.    host.celltype.naive <- 
+        #  <- p_norm * ( host.celltype.naive / ( host.celltype.naive + donor.celltype.naive ) )
+        ( p_norm * 
+            parabio.data.raw.i[ , host.celltype.cellstate ] / (
+              parabio.data.raw.i[ , host.celltype.cellstate ] + 
+                parabio.data.raw.i[ , donor.celltype.cellstate ] ) ) %>% 
+          unlist() %>% as.numeric(), 
+        
+        0 
+        )
+    
+    # Now for donor:
+    parabio.data.raw.i_n[ , donor.celltype.cellstate ] <-
+      ifelse( 
+        ( ( parabio.data.raw.i[ , host.celltype.cellstate ] + 
+              parabio.data.raw.i[ , donor.celltype.cellstate ] ) %>% 
+            unlist() %>% as.vector() ) > 0,   
+        
+        ( p_norm * parabio.data.raw.i[ , donor.celltype.cellstate ] / (
+          parabio.data.raw.i[ , host.celltype.cellstate ] + 
+            parabio.data.raw.i[ , donor.celltype.cellstate ] ) ) %>% 
+          unlist %>% as.numeric(), 
+        
+        0 
+      )
+    return( parabio.data.raw.i_n )
+  }
+  
+  normalize_tissue_states_in_time <- function( parabio.data.raw.i )
+  {
     p_naive <- mean( unlist( parabio.data.raw.i[ , "host.celltype.naive" ] + 
                                parabio.data.raw.i[ , "donor.celltype.naive" ] ) )
     p_activ <- mean( unlist( parabio.data.raw.i[ , "host.celltype.activ" ] + 
@@ -74,11 +88,13 @@ markov_premodel_prints_eps <- function( celltype, ps,
       parabio.data.raw.i_n
     return( parabio.data.raw.i_n )
   }
+
   
+    
   
   CORRECT_0 <- FALSE
   
-  tissue.i1 <- vector.tissues[ 1 ]
+  tissue.i1 <- vector_tissues[ 1 ]
   
   read_csv( sprintf( "%s/Total_counts/parabiosis_model_input_%s_counts.csv",
                      ps$PROCESSED_PATH, celltype ) ) -> 
@@ -86,19 +102,15 @@ markov_premodel_prints_eps <- function( celltype, ps,
   
   
   if ( DEFINE_PARAMETERS_AND_SET_OPTIONS <- TRUE ) {
-  
-    seed.base <- 20230101                                                      
     
-    data.dir <- sprintf( "%s/%s", ps$PROCESSED_PATH, celltype )
-    data.file.name <- sprintf( "%s_parabiosis_data_%s.csv", 
-                               celltype, tolower( tissue.i1 ) )
+    data_dir <- get_path( "data", ps = ps, celltype = celltype ) 
     
     pb.week <- c( 0, 1, 2, 4, 8, 12 )
     
     l.data.file.name <- list()
-    for( i in ( 1 : ( length( vector.tissues ) ) ) ) {
+    for( i in ( 1 : ( length( vector_tissues ) ) ) ) {
       l.data.file.name[[ i ]] <- sprintf( "%s_parabiosis_data_%s.csv", celltype,
-                                          tolower( vector.tissues[ i ] ) ) 
+                                          tolower( vector_tissues[ i ] ) ) 
     }
     if ( length( complem_tissues ) > 0 ) {
       l.complem.data.file.name <- list()
@@ -108,13 +120,13 @@ markov_premodel_prints_eps <- function( celltype, ps,
       }
     }
     
-    vector.tissues.tmp <- vector.tissues
+    vector_tissues_tmp <- vector_tissues
     if ( length( complem_tissues ) > 0 ) {
-      vector.tissues.tmp <- c( vector.tissues, "Pooled__Others" )
+      vector_tissues_tmp <- c( vector_tissues, "Pooled__Others" )
     }
     
-    pb.tissue <- c( "blood", tolower( vector.tissues.tmp ) )
-    pb.tissue.label <- c( "Blood", vector.tissues.tmp )
+    pb.tissue <- c( "blood", tolower( vector_tissues_tmp ) )
+    pb.tissue.label <- c( "Blood", vector_tissues_tmp )
     names( pb.tissue.label ) <- pb.tissue
     
     pb.hostdonor <- c( "host", "donor" )
@@ -148,16 +160,19 @@ markov_premodel_prints_eps <- function( celltype, ps,
     }
     
     pb.cell.ratio <- c( 750 )
-    for ( i in ( 1 : ( length( vector.tissues ) ) ) ) {
-      Blood_Count <- d.celltype.counts[ d.celltype.counts$Tissue == "Blood", "Mean" ]
-      tissue.proportion.tissuei <- unlist( round( d.celltype.counts[ 
-        d.celltype.counts$Tissue == vector.tissues[ i ], "Mean" ] / Blood_Count * 750 ) )
+    for ( i in ( 1 : ( length( vector_tissues ) ) ) ) {
+      Blood_Count <- d.celltype.counts[ d.celltype.counts$Tissue == "Blood", count_type ]
+      tissue.proportion.tissuei <- unlist( round( 
+        d.celltype.counts[ 
+          d.celltype.counts$Tissue == vector_tissues[ i ], count_type ] / 
+          Blood_Count * 750, 2 ) )
       pb.cell.ratio <- c( pb.cell.ratio, tissue.proportion.tissuei )
     }
-    if( length( complem_tissues ) > 0 ) {                                      # adding artificial pool of tissues
+    if ( length( complem_tissues ) > 0 ) {                                      # adding artificial pool of tissues
       tissue.proportion.tissuei <- unlist( round(
-        sum( d.celltype.counts[ d.celltype.counts$Tissue %in% complem_tissues, "Mean" ] ) / 
-        Blood_Count * 750 ) )
+        sum( d.celltype.counts[ 
+          d.celltype.counts$Tissue %in% complem_tissues, count_type ] ) / 
+        Blood_Count * 750, 2 ) )
       pb.cell.ratio <- c( pb.cell.ratio, tissue.proportion.tissuei )
     }
     
@@ -182,7 +197,8 @@ markov_premodel_prints_eps <- function( celltype, ps,
   }  
   
   
-  pb <- list(                                                                  # needed for the function estimate.week.alpha.simple.n()
+  # needed for the function estimate_week_alpha_simple_n()
+  pb <- list(                                                                  
     pb.tissue, pb.tissue.label, pb.hostdonor, 
     pb.parent.popul, pb.parent.popul.label, 
     pb.sub.popul, pb.sub.popul.label, 
@@ -202,15 +218,15 @@ markov_premodel_prints_eps <- function( celltype, ps,
          "pb.host.popul", "pb.hostdonor.popul", "pb.hostdonor.tissue.popul" )
   
   # read and preprocess data
-  if ( READ_AND_PREPROCESS_DATA <- TRUE ) {                                    
+  if ( READ_AND_PREPROCESS_DATA <- TRUE ) {                                
   
     parabio.data.raw.1 <- read.csv( 
-      file.path( data.dir, l.data.file.name[[ 1 ]] ) )
+      file.path( data_dir, l.data.file.name[[ 1 ]] ) )
     names( parabio.data.raw.1 ) <- c( 
       "tissue", "week", "mouse", "pair",	
       "host.celltype.naive",	"host.celltype.activ",	"host.celltype.cd69p",	
       "donor.celltype.naive", "donor.celltype.activ",	"donor.celltype.cd69p" )
-    if ( NORMALIZE ) { 
+    if ( st$NORMALIZE ) { 
       parabio.data.raw.blood <- parabio.data.raw.1[ 
         parabio.data.raw.1$tissue == "Blood", ]
       parabio.data.raw.blood_n <- 
@@ -226,17 +242,17 @@ markov_premodel_prints_eps <- function( celltype, ps,
       parabio.data.raw <- rbind( parabio.data.raw.1 )
     }
       
-    if ( length( vector.tissues ) > 1 ) {
-      for ( i in ( 2 : ( length( vector.tissues ) ) ) ) {
+    if ( length( vector_tissues ) > 1 ) {
+      for ( i in ( 2 : ( length( vector_tissues ) ) ) ) {
         parabio.data.raw.i <- read.csv( 
-          file.path( data.dir, l.data.file.name[[ i ]] ) )
+          file.path( data_dir, l.data.file.name[[ i ]] ) )
         names( parabio.data.raw.i ) <- c( 
           "tissue", "week", "mouse", "pair",	
           "host.celltype.naive",	"host.celltype.activ",	"host.celltype.cd69p",	
           "donor.celltype.naive", "donor.celltype.activ",	"donor.celltype.cd69p" )
         
         parabio.data.raw.i <- parabio.data.raw.i[ parabio.data.raw.i$tissue != "Blood", ]
-        if ( NORMALIZE ) { 
+        if ( st$NORMALIZE ) { 
           parabio.data.raw.i_n <- 
             normalize_tissue_states_in_time( parabio.data.raw.i )
           parabio.data.raw <- rbind( parabio.data.raw, parabio.data.raw.i_n )
@@ -246,21 +262,26 @@ markov_premodel_prints_eps <- function( celltype, ps,
       }
     }
     
+    Blood_Count <- d.celltype.counts[ d.celltype.counts$Tissue == "Blood", count_type ]
+    
     if ( length( complem_tissues ) > 0 ) {
       parabio.data.raw.complem <- NULL
       for ( j in ( 1 : ( length( complem_tissues ) ) ) ) { 
-        parabio.data.raw.j <- read.csv( file.path( data.dir, l.complem.data.file.name[[ j ]] ) )
+        parabio.data.raw.j <- read.csv( file.path( data_dir, l.complem.data.file.name[[ j ]] ) )
         names( parabio.data.raw.j ) <- c( 
           "tissue", "week", "mouse", "pair",	
           "host.celltype.naive",	"host.celltype.activ",	"host.celltype.cd69p",	
           "donor.celltype.naive", "donor.celltype.activ",	"donor.celltype.cd69p" )
         parabio.data.raw.j <- parabio.data.raw.j[ parabio.data.raw.j$tissue != "Blood", ]
         parabio.data.raw.j$total.count <- 
-          d.celltype.counts$Mean[ d.celltype.counts$Tissue == complem_tissues[ j ] ]
-        parabio.data.raw.complem <- rbind( parabio.data.raw.complem, parabio.data.raw.j )
+          d.celltype.counts[ d.celltype.counts$Tissue == complem_tissues[ j ], 
+                             count_type ] %>% unlist
+          
+        parabio.data.raw.complem <- rbind( parabio.data.raw.complem, 
+                                           parabio.data.raw.j )
       }
       parabio.data.raw.complem %>% as_tibble() %>% 
-        group_by( mouse ) %>% 
+        group_by( mouse ) %>%
         summarise( 
           tissue = "Pooled__Others",
           week = as.integer( mean( week ) ),
@@ -272,7 +293,7 @@ markov_premodel_prints_eps <- function( celltype, ps,
           donor.celltype.activ = weighted.mean( x = donor.celltype.activ, w = total.count ),
           donor.celltype.cd69p = weighted.mean( x = donor.celltype.cd69p, w = total.count ) ) ->
         parabio.data.raw.complem.pooled
-      if ( NORMALIZE ) { 
+      if ( st$NORMALIZE ) { 
         parabio.data.raw.complem.pooled_n <-
           normalize_tissue_states_in_time( parabio.data.raw.complem.pooled )
         parabio.data.raw <- rbind( parabio.data.raw, parabio.data.raw.complem.pooled_n )
@@ -299,14 +320,14 @@ markov_premodel_prints_eps <- function( celltype, ps,
   
   if ( FIT_DIRICHLET_AT_W0_AND_GET_DATA_FOR_LATER <- TRUE ) {
     if ( !CORRECT_0 ) {
-    week00.alpha <- estimate.week.alpha.simple.n( 
+    week00.alpha <- estimate_week_alpha_simple_n( 
       parabio.data, w = 0, n.tis = pb.tissue.n, pb = pb )
-    week0i.alpha <- estimate.week.alpha.simple.n( 
+    week0i.alpha <- estimate_week_alpha_simple_n( 
       parabio.data, w = pb.week0i, n.tis = pb.tissue.n, pb = pb ) 
     } else {
-        week00.alpha <- estimate.week.alpha.simple.n( 
+        week00.alpha <- estimate_week_alpha_simple_n( 
           parabio.data, w = 0 + f_eps, n.tis = pb.tissue.n, pb = pb )
-        week0i.alpha <- estimate.week.alpha.simple.n( 
+        week0i.alpha <- estimate_week_alpha_simple_n( 
           parabio.data, w = pb.week0i + f_eps, n.tis = pb.tissue.n, pb = pb )
       }
 
@@ -316,12 +337,15 @@ markov_premodel_prints_eps <- function( celltype, ps,
     
     parabio.model.tissue <- parabio.data[ parabio.data$week > pb.week0i_eps, "tissue" ]
     
-    parabio.model.x <- data.matrix( parabio.data[ parabio.data$week > pb.week0i_eps,
-                                                  gsub( pattern = "\\.(.*)\\.", 
-                                                        replacement = ".celltype.", pb.hostdonor.popul ) ] )
+    parabio.model.x <- data.matrix( parabio.data[ 
+      parabio.data$week > pb.week0i_eps,
+      gsub( 
+        pattern = "\\.(.*)\\.", 
+        replacement = ".celltype.", 
+        pb.hostdonor.popul ) ] )
     stopifnot( parabio.model.x >= 0 )
     parabio.model.x <- sweep( parabio.model.x, 1, rowSums( parabio.model.x ), "/" )
-    parabio.model.x <- model.x.remove.zeros( parabio.model.x )
+    parabio.model.x <- model_x_remove_zeros( parabio.model.x )
     
     parabio.model.x <- sweep( parabio.model.x, 1, rowSums( parabio.model.x ), "/" )
     parabio.model.x 
@@ -330,23 +354,23 @@ markov_premodel_prints_eps <- function( celltype, ps,
   
   # set variables for markov model
   if ( SET_VARIABLES_FOR_MARKOV_MODEL <- TRUE ) {
-    if ( !is.na( f_host_donor_rate_ ) ) { 
-      host_donor_rate_ <- f_host_donor_rate_ %>% as.numeric } else { 
+    if ( !is.na( st$HOST_DONOR_RATE_ ) ) { 
+      host_donor_rate_ <- st$HOST_DONOR_RATE_ %>% as.numeric } else { 
         host_donor_rate_ <- 100 }
-    if ( !is.na( f_use_wghs_ ) ) {
-      use_wghs_ <- f_use_wghs_ %>% as.integer() } else {
+    if ( !is.na( st$USE_WGHS_ ) ) {
+      use_wghs_ <- st$USE_WGHS_ %>% as.integer() } else {
         use_wghs_ <- 0L
       }
-    if ( !is.na( f_use_hdr2_ ) ) {
-      use_hdr2_ <- f_use_hdr2_ %>% as.integer() } else {
+    if ( !is.na( st$USE_HDR2_ ) ) {
+      use_hdr2_ <- st$USE_HDR2_ %>% as.integer() } else {
         use_hdr2_ <- 0L
       }
-    if ( !is.na( f_brf ) ) {
-      brf <- f_brf %>% as.numeric() } else {
+    if ( !is.na( st$BRF ) ) {
+      brf <- st$BRF %>% as.numeric() } else {
         brf <- 1    # e.g. 100.000 for Treg as in .csv
       }
-    if ( !is.na( f_max_flow_to_N3_ ) ) {
-      max_flow_to_N3_ <- f_max_flow_to_N3_ %>% as.numeric() } else {
+    if ( !is.na( st$MAX_FLOW_TO_N3_ ) ) {
+      max_flow_to_N3_ <- st$MAX_FLOW_TO_N3_ %>% as.numeric() } else {
         max_flow_to_N3_ <- 1    
       }
     
@@ -369,8 +393,9 @@ markov_premodel_prints_eps <- function( celltype, ps,
     
     al_old_ <- al_
     if ( limit_dist_w12 ) {
-      week12.alpha <- estimate.week.alpha.simple.n( 
-        parabio.data, w = 12, n.tis = pb.tissue.n, pb = pb )
+      if ( celltype != "B" ) { w12 <- 12 } else { w12 <- 8 }
+      week12.alpha <- estimate_week_alpha_simple_n( 
+        parabio.data, w = w12, n.tis = pb.tissue.n, pb = pb )
       
       al12_tmp_ <- as.vector( sapply( pb.hostdonor, function( hd )
         sapply( pb.tissue, function( tis )
@@ -405,11 +430,11 @@ markov_premodel_prints_eps <- function( celltype, ps,
     w_b <- min( ( pb.week )[ pb.week > f_pb.week0i ] )  # the next after start
     if ( NEW_2_4 <- TRUE ) {
       # week a
-      week0a.alpha <- estimate.week.alpha.simple.n( 
+      week0a.alpha <- estimate_week_alpha_simple_n( 
         parabio.data, w = w_a, n.tis = pb.tissue.n, pb = pb )
       
       # week b
-      week0b.alpha <- estimate.week.alpha.simple.n( 
+      week0b.alpha <- estimate_week_alpha_simple_n( 
         parabio.data, w = w_b, n.tis = pb.tissue.n, pb = pb )
       
       a04_ <- as.vector( sapply( pb.hostdonor, function( hd )
@@ -440,31 +465,17 @@ markov_premodel_prints_eps <- function( celltype, ps,
     }
   }
     
-  if ( !is.na( ND ) ) {
-    stopifnot( length( al_ ) == 12 )
-    al_tmp <- c( al_, sum( al_[ 7:9 ] ) )
-    al_ <- al_tmp / sum( al_tmp )
-      
-    a0i_tmp <- c( a0i_[ 1:12 ], a0i_[ 13:24 ],
-                  sum( a0i_[ 7:9 ] ), sum( a0i_[ 19:21 ] ) )
-    names( a0i_tmp ) <- c( pb.hostdonor.tissue.popul[  1:12 ], 
-                           pb.hostdonor.tissue.popul[ 13:24 ], 
-                           "host.dead.cells", "donor.dead.cells" )
-    a0i_ <- a0i_tmp / sum( a0i_tmp )
-  } else {
-    names( a0i_ ) <- pb.hostdonor.tissue.popul
-  }
+  names( a0i_ ) <- pb.hostdonor.tissue.popul
     
   # save model pb and starting.data_ to files and .RData - to create a function
   if ( SAVING_FOR_LOG.LIK_MANUAL_CALC <- TRUE ) {
-    mcmc.par.set <- ( ( mcmc.iter.n - mcmc.warmup.n ) * mcmc.chain.n ) %>% 
-      format( scientific = FALSE )
-    analysis.celltype.tissue.model.vars.dir <- 
-      sprintf( "%s/%s/%s/%s_%s%s/model_vars", ps$ANALYSIS_PATH, celltype, 
-               tissue.i1, model.name, mcmc.par.set, model.ver )
+    model_vars_dir <- get_path( 
+      type = "model_vars_dir", m = m, 
+      celltype = celltype, tissue = tissue.i1, ps = ps, mcmc_pars = m$mcmc_pars, 
+      model_name = m$model_name, model_ver = model_ver )
   
-    if ( !dir.exists( analysis.celltype.tissue.model.vars.dir ) ) 
-      dir.create( analysis.celltype.tissue.model.vars.dir, recursive = TRUE )
+    if ( !dir.exists( model_vars_dir ) ) 
+      dir.create( model_vars_dir, recursive = TRUE )
     
     save( pb.tissue, pb.tissue.label, pb.hostdonor, 
           pb.parent.popul, pb.parent.popul.label, 
@@ -473,11 +484,9 @@ markov_premodel_prints_eps <- function( celltype, ps,
           pb.week, pb.week.n, pb.tissue.n, pb.popul.n,
           pb.week0i, pb.cell.ratio, pb.figure.week.max,
           pb.host.popul, pb.hostdonor.popul, pb.hostdonor.tissue.popul,
-          file = sprintf( "%s/pb.RData", 
-                          analysis.celltype.tissue.model.vars.dir ) )
+          file = sprintf( "%s/pb.RData", model_vars_dir ) )
     write.csv( pb.cell.ratio, row.names = TRUE,
-               sprintf( "%s/pb_cell_ratio.csv", 
-                        analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/pb_cell_ratio.csv", model_vars_dir ) )
 
     # e.g., n_cells_born_per_day is 100000 for Treg
     read_csv( sprintf( "%s/Total_counts/cells_born_counts.csv",
@@ -489,13 +498,14 @@ markov_premodel_prints_eps <- function( celltype, ps,
     read_csv( sprintf( "%s/Total_counts/parabiosis_model_input_%s_counts.csv",
                        ps$PROCESSED_PATH, celltype ) ) -> d.celltype.counts
     n_blood_cells <- d.celltype.counts[ 
-      d.celltype.counts$Tissue == "Blood", "Mean" ] %>% unlist %>% as.numeric
+      d.celltype.counts$Tissue == "Blood", count_type ] %>% 
+      unlist %>% as.numeric
     b_rate_rel_to_blood_naive_ <- brf * 
       n_born_cells_day_celltype * sum( al_[ 1:3 ] ) / ( n_blood_cells * al_[ 1 ] )
     cat( sprintf( "\nb_rate_rel_to_blood_naive_ = %s\n", 
                   b_rate_rel_to_blood_naive_ ) )
     
-    if ( !is.na( f_use_hdr2_ ) ) {
+    if ( !is.na( st$USE_HDR2_ ) ) {
       read_csv( sprintf( "%s/Total_counts/min_hdr2.csv",
                          ps$PROCESSED_PATH ) ) -> d.min_hdr2
       hdr2_lower_ <- d.min_hdr2[ 
@@ -508,26 +518,24 @@ save( host_donor_rate_, n_, wn_, tn_, pn_, w0i_, w_, wi_, ti_, x_, al_, a0i_,
       q12_, q12_fixed_, b_rate_rel_to_blood_naive_, use_wghs_, 
       use_hdr2_, hdr2_lower_, 
       max_flow_to_N3_, 
-      file = sprintf( "%s/model_vars_.RData", 
-                      analysis.celltype.tissue.model.vars.dir ) )
+      file = sprintf( "%s/model_vars_.RData", model_vars_dir ) )
 
     save( parabio.data,
-          file = sprintf( "%s/other_vars.RData",
-                          analysis.celltype.tissue.model.vars.dir ) )
-    write.csv( a0i_, sprintf( "%s/a0i_.csv", analysis.celltype.tissue.model.vars.dir ),
+          file = sprintf( "%s/other_vars.RData", model_vars_dir ) )
+    write.csv( a0i_, sprintf( "%s/a0i_.csv", model_vars_dir ),
                row.names = names( a0i_ ) )
     write.csv( x_, row.names = TRUE,
-               sprintf( "%s/x_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/x_.csv", model_vars_dir ) )
     write.csv( data.frame( wi_, parabio.model.week ), row.names = TRUE,
-               sprintf( "%s/wi_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/wi_.csv", model_vars_dir ) )
     write.csv( ti_, row.names = TRUE,
-               sprintf( "%s/ti_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/ti_.csv", model_vars_dir ) )
     write.csv( al_, row.names = TRUE,
-               sprintf( "%s/al_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/al_.csv", model_vars_dir ) )
     write.csv( al12_tmp_, row.names = TRUE,
-               sprintf( "%s/al12_tmp_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/al12_tmp_.csv", model_vars_dir ) )
     write.csv( al_old_, row.names = TRUE,
-               sprintf( "%s/al_old_.csv", analysis.celltype.tissue.model.vars.dir ) )
+               sprintf( "%s/al_old_.csv", model_vars_dir ) )
   }
 }
 

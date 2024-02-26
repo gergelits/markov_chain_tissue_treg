@@ -1,79 +1,57 @@
 # plot_all_tissue_trajectories.r
 
-plot_all_tissue_trajectories <- function( celltype = celltype, ps, n.iter = 0,
+plot_all_tissue_trajectories <- function( m_tisNA = NULL, 
                                           sel_models_file_name )
 {
-  pmc <- get_parabiosis_const()
-  model.id <- gsub( pattern = ".*_([0-9]{3,4}[a-z]{0,3})_.*", replacement = "\\1",
-                    x = sel_models_file_name )
-  fig.filename.start <- sprintf( "f%s_%s_%s", model.id, celltype, n.iter )
-  path.figures <- sprintf( "%s/%s/%s", ps$RESULTS_PATH, celltype, "Figures" )
-  if ( !dir.exists( path.figures ) ) { 
-    dir.create( path.figures, recursive = TRUE ) }
-  path.fig.filename.start <- sprintf( "%s/%s", path.figures, fig.filename.start )
-  if ( !dir.exists( path.fig.filename.start ) ) {
-    dir.create( path.fig.filename.start, recursive = FALSE ) }
+  model_id <- get_model_id( sel_models_file_name )
+  fig_fname_start <- get_fig_fname_start( m = m_tisNA )
+  figs_dir <- get_path( "figs_m", m = m_tisNA )
+  figs_traj_dir <- get_path( "figs_m_traj", m = m_tisNA )
   
-  tissues <- pmc$tissue.all.ordered
-  tissues <- c( tissues[ -which( tissues == "Blood" ) ], "Blood" )
-
-  
-  load_one_obj <- function( f )
-  {
-    env <- new.env()
-    nm <- load( f, env )[ 1 ]
-    return( env[[ nm ]] )
-  }
-
-  l_tissue_per_row <- list()
-  for ( i in ( 1 : length( tissues ) ) ) {
-    tissue_trajectory_rda <- 
-      sprintf( "%s/%s_%s_trajectories_2.rda",   
-               path.figures, fig.filename.start, tolower( tissues[ i ] ) )
-    if ( file.exists( tissue_trajectory_rda ) ) {
-      l_tissue_per_row[[ i ]] <- load_one_obj( tissue_trajectory_rda )
-    } else {
-      l_tissue_per_row[[ i ]] <- NA
-    }
-  }
+  tissues_all <- get_pmc()$tissue.all.ordered
+  tissues_no_bl <- tissues_all[ -which( tissues_all == "Blood" ) ]
+  tissues_bl <- c( tissues_no_bl, "Blood" )
   
   n_figs_per_A4 <- 4
-  if ( ( length( tissues ) %% n_figs_per_A4 ) != 0 ) {
-    for ( i in ( ( length( tissues ) + 1 ) : 
-                 ( ceiling( length( tissues ) / n_figs_per_A4 ) * n_figs_per_A4 ) ) ) {
-      l_tissue_per_row[[ i ]] <- NULL  
-    }
-  }
-  
-  l_trajectories_multiple_pages <- list()
-  for ( i in 0 : ( ceiling( length( tissues ) %/% n_figs_per_A4 ) - 1 ) ) {
-    l_trajectories_multiple_pages[[ 1 + i ]] <- ggpubr::ggarrange( 
-      l_tissue_per_row[[ 1 + i*n_figs_per_A4 ]], 
-      l_tissue_per_row[[ 2 + i*n_figs_per_A4 ]],
-      l_tissue_per_row[[ 3 + i*n_figs_per_A4 ]], 
-      l_tissue_per_row[[ 4 + i*n_figs_per_A4 ]],
-      ncol = 1, nrow = n_figs_per_A4, 
-      labels = LETTERS[ ( 1:n_figs_per_A4 ) + i * n_figs_per_A4 ]
-    )
-  }
-  
-  l_trajectories_multiple_pages[[ 5 ]] <- ggpubr::ggarrange( 
-    l_tissue_per_row[[ 17 ]], NULL, NULL, NULL,
-    ncol = 1, nrow = n_figs_per_A4, 
-    labels = c( LETTERS[ 17 ], "", "", "" ) )
-  
-  cm_to_in <- 1 / 2.54
-  cm_to_in2 <- cm_to_in * 2
-  ggpubr::ggexport( l_trajectories_multiple_pages,
-                    filename = sprintf( "%s/Figure_S17_%s_trajectories_multipage.pdf", 
-                                        path.figures, fig.filename.start ),
-                    width = 21 * cm_to_in2, height = 29.7 * cm_to_in2 )
+  n_figs <- length( tissues_bl )
+  n_A4 <- ceiling( n_figs / n_figs_per_A4 )
+  ns <- list(); 
+  ns$n_figs <- n_figs; ns$n_A4 <- n_A4; ns$n_figs_per_A4 <- n_figs_per_A4; 
 
-  for ( i in 0 : ( ceiling( length( tissues ) %/% n_figs_per_A4 ) ) ) {
-    ggpubr::ggexport( l_trajectories_multiple_pages[[ 1 + i ]],
-                      filename = sprintf( 
-                        "%s/Figure S17 p%s.svg", 
-                        path.figures, as.character( i + 1 ) ),
-                      width = 21 * cm_to_in2, height = 29.7 * cm_to_in2 )
+  # modelled tissue trajectories
+  l_figs_in_row_tis <- get_list_of_fig_rows( m_tisNA = m_tisNA, ns = ns, 
+                                             traj_type = "tis" )
+  l_trajs_multiple_pages <- plot_traj_multipage( 
+    m_tisNA = m_tisNA, ns = ns, l_figs_in_row = l_figs_in_row_tis, 
+    traj_type = "tis" )
+  
+  # other trajectories
+  if ( ! CALC_TTP ) {
+    l_figs_in_row_pooled <- get_list_of_fig_rows( m_tisNA = m_tisNA, ns = ns, 
+                                                  traj_type = "pooled" )
+    l_figs_in_row_blood <- get_list_of_fig_rows( m_tisNA = m_tisNA, ns = ns, 
+                                                 traj_type = "blood" )
+    plot_traj_multipage( 
+      m_tisNA = m_tisNA, ns = ns, l_figs_in_row = l_figs_in_row_pooled,
+      traj_type = "pooled" )
+    plot_traj_multipage(
+      m_tisNA = m_tisNA, ns = ns, l_figs_in_row = l_figs_in_row_blood,
+      traj_type = "blood" )
+  }
+  
+  if ( CALC_TTP ) {
+    cm_to_in <- 1 / 2.54
+    cm_to_in2 <- cm_to_in * 2
+    for ( i in 1 : n_A4 ) {
+      # new version of ggpubr package needed for .svg
+      # Not working on cluster?
+      svg_fname <- sprintf( "%s/%s_Figure_S17_p%i.svg", 
+                            figs_traj_dir, fig_fname_start, i )
+      try(
+        ggexport_my( 
+          l_trajs_multiple_pages[[ i ]], filename = svg_fname,
+          width = 21 * cm_to_in2, height = 29.7 * cm_to_in2 )
+      )
+    }
   }
 }

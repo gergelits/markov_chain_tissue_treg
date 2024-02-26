@@ -1,23 +1,29 @@
 # prep_data_figures_6.r                               
 
-write.aggregated.group.flows <- function( 
-    ps = PS, celltype, write_csv = FALSE,
-    n.iter, sel_models_file_name,
-    model.name, model.ver, setup.mcmc.fname )
-
+write_aggregated_group_flows <- function(
+    m_tisNA = NULL,
+    write_csv = FALSE,
+    sel_models_file_name )
 {
-  model.id <- gsub( pattern = ".*_([0-9]{3,4}[a-z]{0,3})_.*", replacement = "\\1",
-                    x = sel_models_file_name )
+  celltype <- m_tisNA$celltype; ps <- m_tisNA$ps; mcmc_pars <- m_tisNA$mcmc_pars;
+  model_id <- get_model_id( sel_models_file_name )
+  model_name <- m_tisNA$model_name; model_ver <- m_tisNA$model_ver
+  # NOTE: model_name, model_ver OR sel_models_file_name redundant
   
-  get.tissues.average.flows( 
-    ps = ps, celltype = celltype, flow.part = "exit",
-    model.name = model.name, model.ver = model.ver, 
-    setup.mcmc.fname = setup.mcmc.fname ) %>%     
-    bind_rows( ., get.tissues.average.flows( 
-      ps = ps, celltype = celltype, flow.part = "entry",
-      model.name = model.name, model.ver = model.ver, 
-      setup.mcmc.fname = setup.mcmc.fname ) ) ->
-    average.flows.celltype
+  avg_flows_exit <- get_tissue_average_flows( 
+    m_tisNA = m_tisNA, ps = ps, celltype = celltype, flow.part = "exit",
+    model_name = model_name, model_ver = model_ver, 
+    mcmc_pars = mcmc_pars ) 
+  avg_flows_entry <- get_tissue_average_flows( 
+    m_tisNA = m_tisNA, ps = ps, celltype = celltype, flow.part = "entry",
+    model_name = model_name, model_ver = model_ver, 
+    mcmc_pars = mcmc_pars )
+  average.flows.celltype <- bind_rows( avg_flows_exit, avg_flows_entry )
+    
+  
+  if ( all( dim( average.flows.celltype ) == c( 0, 0 ) ) ) { 
+    return( NULL )
+  }
   
   
   average.flows.celltype %>%
@@ -55,12 +61,20 @@ write.aggregated.group.flows <- function(
     aggregated.group.flows
   
   if ( write_csv ) {
-    fig.filename.start <- sprintf( "f%s_%s_%s", model.id, celltype, n.iter )
-    path.flow.figure <- sprintf( "%s/%s/Flow_Diagram", ps$RESULTS_PATH, celltype )
-    if( !dir.exists( path.flow.figure ) ) { dir.create( path.flow.figure ) }
-    write_csv( aggregated.group.flows, sprintf( 
-      "%s/%s_flow_diagram_medians_means_degs.csv", 
-      path.flow.figure, fig.filename.start ) )
+    fig_filename_start <- get_fig_fname_start( 
+      model_id = model_id, celltype = celltype, mcmc_pars = mcmc_pars )
+    flow_fig_dir <- get_path( "flow_fig", ps = ps, celltype = celltype )
+    if( !dir.exists( flow_fig_dir ) ) { dir.create( flow_fig_dir ) }
+    
+    write_csv( 
+      aggregated.group.flows, 
+      sprintf( "%s/%s_flow_diagram_medians_means_degs.csv", 
+               flow_fig_dir, fig_filename_start ) )
+    
+    write_csv(
+      aggregated.group.flows %>% filter( f.tissue.group != "BoneMarrow" ), 
+      sprintf( "%s/%s_flow_diagram_medians_means_degs_noBM.csv", 
+               flow_fig_dir, fig_filename_start ) )
     }
   return( aggregated.group.flows )
 }
@@ -109,9 +123,10 @@ get_cellstate_areas <- function(
 
 
 get_aggr_tissuegroup_cellstate_areas <- function( 
-    ps = PS, celltype, write_csv = FALSE )
+    m_tisNA = NULL, write_csv = FALSE )
 {
-  dTissueAllOrderedGroup.f <- get_parabiosis_const()$dTissueAllOrderedGroup.f
+  ps <- m_tisNA$ps; celltype <- m_tisNA$celltype; 
+  dTissueAllOrderedGroup.f <- get_pmc()$dTissueAllOrderedGroup.f
   
   d.tissue.all <- NULL
   for( tissue in dTissueAllOrderedGroup.f$tissue.all ) {
@@ -128,36 +143,46 @@ get_aggr_tissuegroup_cellstate_areas <- function(
     summarise( median_tissue_group_area = median( area ), .groups = "drop" ) %>% 
     mutate( radius = sqrt( median_tissue_group_area ) ) %>% 
     # add Blood areas
-    bind_rows( ., get_cellstate_areas( ps, "Blood", celltype ) %>%              
-        dplyr::rename( median_tissue_group_area = area,
-                       tissue.group = tissue ) ) %>% 
+    bind_rows( ., get_cellstate_areas( ps, "Blood", celltype ) %>%
+                 dplyr::rename( median_tissue_group_area = area,
+                                tissue.group = tissue ) ) %>% 
+    dplyr::select( tissue.group, cellstate, 
+                   median_tissue_group_area, radius ) %>% 
     arrange( tissue.group, cellstate ) ->
     median_tissuegroup_cellstate_areas
   
-  if( write_csv ) { 
-    path.flow.figure <- sprintf( "%s/%s/Flow_Diagram", ps$RESULTS_PATH, celltype )
-    if( !dir.exists( path.flow.figure ) ) { dir.create( path.flow.figure ) }
+  if ( write_csv ) { 
+    flow_fig_dir <- get_path( "flow_fig", ps = ps, celltype = celltype )
+    if ( ! dir.exists( flow_fig_dir ) ) { dir.create( flow_fig_dir ) }
     write_csv( median_tissuegroup_cellstate_areas, sprintf( 
-      "%s/%s_tissuegroup_cellstates_areas.csv", path.flow.figure, celltype ) )
+      "%s/%s_tissuegroup_cellstates_areas.csv", flow_fig_dir, celltype ) )
   }
   
   return( median_tissuegroup_cellstate_areas )
 }
 
 
-get_aggr_total_counts_areas <- function( ps = PS, celltype, write_csv = FALSE )
+get_aggr_total_counts_areas <- function( m_tisNA = NULL, 
+                                         write_csv = FALSE, 
+                                         count_type = "Median" )
 {
+  ps <- m_tisNA$ps; celltype <- m_tisNA$celltype; 
   total_counts <- read_csv( 
     sprintf( "%s/Total_counts/parabiosis_model_input_%s_counts.csv", 
-             ps$PROCESSED_PATH, celltype ) ) 
+             ps$PROCESSED_PATH, celltype ) )
+  
   total_counts %>% 
-    filter( Tissue %in% get_parabiosis_const()$tissue.all.ordered ) %>% 
-    left_join( ., get_parabiosis_const()$dTissueAllOrderedGroupBlood.f %>% 
+    filter( Tissue %in% get_pmc()$tissue.all.ordered ) %>% 
+    left_join( ., get_pmc()$dTissueAllOrderedGroupBlood.f %>% 
                  dplyr::select( tissue.all, tissue.group ), 
                by = c( "Tissue" = "tissue.all" ) ) %>% 
+    # the following grouping needed for correct assignment to Mean_or_Median
+    group_by( Tissue ) %>% 
+    mutate( Mean_or_Median = 
+              ifelse( count_type == "Median", Median, Mean ) ) %>% 
     group_by( tissue.group ) %>% 
-    summarise( median_total_count = median( Mean ),
-               mean_total_count = mean( Mean ) ) %>% 
+    summarise( median_total_count = median( Mean_or_Median ),
+               mean_total_count = mean( Mean_or_Median ) ) %>% 
     mutate( max_median_total_count = max( median_total_count ),
             rel_to_max_total_count = 
               median_total_count / max_median_total_count,
@@ -165,10 +190,10 @@ get_aggr_total_counts_areas <- function( ps = PS, celltype, write_csv = FALSE )
     dTotalCountsAreas
   
   if( write_csv ) {   
-    path.flow.figure <- sprintf( "%s/%s/Flow_Diagram", ps$RESULTS_PATH, celltype )
-    if( !dir.exists( path.flow.figure ) ) { dir.create( path.flow.figure ) }
+    flow_fig_dir <- get_path( "flow_fig", m = m_tisNA )
+    if( !dir.exists( flow_fig_dir ) ) { dir.create( flow_fig_dir ) }
     write_csv( dTotalCountsAreas, sprintf( 
-      "%s/%s_total_count_areas.csv", path.flow.figure, celltype ) )
+      "%s/%s_total_count_areas.csv", flow_fig_dir, celltype ) )
   }
 
   return( dTotalCountsAreas )
@@ -176,97 +201,106 @@ get_aggr_total_counts_areas <- function( ps = PS, celltype, write_csv = FALSE )
 
 
 plot_aggr_tissuegroup_cellstate_barplot <- function( 
-  ps = PS, celltype = "Treg", plot = TRUE )
+    m_tisNA = NULL, plot = TRUE )
 {
-
-dCellstatesProps <- NULL
-for ( tissue in get_parabiosis_const()$tissue.all.ordered )
-  for ( hd in c( "host", "donor" ) )
-    for ( week in c( 0, 1, 2, 4, 8, 12 ) ) {
-      dCellstatesProps %>% 
-        bind_rows( ., get_cellstate_areas( 
-          ps = PS, f_tissue = tissue, celltype = "Treg", 
-          hd = hd, f_week = week ) ) -> 
-            dCellstatesProps
-    }
-
-dCellstatesProps %>% 
-  filter( !( week == 0 & hd == "donor" ) ) %>%
-  left_join( ., get_parabiosis_const()$dTissueAllOrderedGroupBlood.f,
-             by = c( "tissue" = "tissue.all" ) ) %>% 
-  group_by( tissue.group, hd, week, cellstate ) %>% 
-  summarise( mean_prop = mean( area ) ) %>% 
-  ungroup() %>% 
-  bind_rows( ., tibble( 
-    mean_prop = 1, hd = "donor", week = 0, 
-    tissue.group = c( "Blood", "Non-lymphoid", "Lymphoid", "GALT" ) ) ) %>% 
-  mutate( hd_wk = sprintf( "%s_wk%s", hd, str_pad( week, 2, pad = "0" ) ) ) %>%
-  mutate( hd_ordered = ifelse( hd == "host", "01_host", "02_donor" ) ) %>%
-  arrange( hd_ordered, week ) %>% 
+  celltype <- m_tisNA$celltype; ps <- m_tisNA$ps
+  dCellstatesProps <- NULL
+  for ( tissue in get_pmc()$tissue.all.ordered )
+    for ( hd in c( "host", "donor" ) )
+      for ( week in c( 0, 1, 2, 4, 8, 12 ) ) {
+        dCellstatesProps %>% 
+          bind_rows( ., get_cellstate_areas( 
+            ps = PS, f_tissue = tissue, celltype = celltype, 
+            hd = hd, f_week = week ) ) -> 
+              dCellstatesProps
+      }
   
-  mutate( hd_hack = ifelse( hd == "host", "", " " ) ) %>% 
-  mutate( hd_wk_ordered = factor( sprintf(
-    "%s_wk%s", hd_ordered, str_pad( week, 2, pad = "0" ) ),
-    labels = unique( sprintf( "%s%s%s", hd_hack, week, hd_hack ) ) ) ) %>%
-
-  mutate( cellstate = ifelse( 
-    cellstate == "naive", "resting", cellstate ) ) %>% 
-  mutate( cellstate = ifelse( 
-    cellstate == "activ", "activated", cellstate ) ) %>% 
-  mutate( cellstate = ifelse( 
-    cellstate == "cd69p", "CD69+", cellstate ) ) %>% 
-  mutate( cellstate = factor(
-    cellstate, levels = c( "resting", "activated", "CD69+" ) ) ) %>% 
+  dCellstatesProps %>% 
+    filter( !( week == 0 & hd == "donor" ) ) %>%
+    filter( tissue != "BoneMarrow" ) %>% 
+    left_join( ., get_pmc()$dTissueAllOrderedGroupBlood.f,
+               by = c( "tissue" = "tissue.all" ) ) %>% 
+    group_by( tissue.group, hd, week, cellstate ) %>% 
+    summarise( mean_prop = mean( area ), .groups = "drop_last" ) %>%
+    ungroup() %>% 
+    bind_rows( ., tibble( 
+      mean_prop = 1, hd = "donor", week = 0, 
+      tissue.group = c( "Blood", "Non-lymphoid", "Lymphoid", "GALT" ) ) ) %>% 
+    mutate( hd_wk = sprintf( "%s_wk%s", hd, str_pad( week, 2, pad = "0" ) ) ) %>%
+    mutate( hd_ordered = ifelse( hd == "host", "01_host", "02_donor" ) ) %>%
+    arrange( hd_ordered, week ) %>% 
+    
+    mutate( hd_hack = ifelse( hd == "host", "", " " ) ) %>% 
+    mutate( hd_wk_ordered = factor( sprintf(
+      "%s_wk%s", hd_ordered, str_pad( week, 2, pad = "0" ) ),
+      labels = unique( sprintf( "%s%s%s", hd_hack, week, hd_hack ) ) ) ) %>%
   
-  mutate( tissue.group = factor( 
-    tissue.group, levels = c( "Blood", "Lymphoid", "Non-lymphoid", "GALT" ) ) ) ->
-  dCellstatesPropsGroups
+    mutate( cellstate = ifelse( 
+      cellstate == "naive", "resting", cellstate ) ) %>% 
+    mutate( cellstate = ifelse( 
+      cellstate == "activ", "activated", cellstate ) ) %>% 
+    mutate( cellstate = ifelse( 
+      cellstate == "cd69p", "CD69+", cellstate ) ) %>% 
+    mutate( cellstate = factor(
+      cellstate, levels = c( "resting", "activated", "CD69+" ) ) ) %>% 
+    
+    mutate( tissue.group = factor( 
+      tissue.group, levels = c( "Blood", "Lymphoid", "Non-lymphoid", "GALT" ) ) ) ->
+    dCellstatesPropsGroups
   
   cm_to_in <- 1 / 2.54   
   f <- cm_to_in * 1.7
   
   dCellstatesPropsGroups %>% 
-  ggplot( ., aes( x = hd_wk_ordered, y = mean_prop, fill = cellstate ) ) + 
-  geom_bar( position = "fill", stat = "identity" ) +
-  facet_grid( cols = vars( tissue.group ) ) +
-  theme_classic() +
-  theme( plot.title = element_text( hjust = 0 ), 
-         axis.title.x = element_blank(),
-         axis.title.y = element_text( size = 12 * f, hjust = 0.5 ),  
-         
-         axis.text.x = element_text( size = 12 * f ),
-         axis.text.y = element_text( size = 12 * f ),  
-         
-         panel.border = element_blank(),             
-         panel.grid.major = element_blank(),         
-         panel.grid.minor = element_blank(),
+    ggplot( ., aes( x = hd_wk_ordered, y = mean_prop, fill = cellstate ) ) + 
+    geom_bar( position = "fill", stat = "identity" ) +
+    facet_grid( cols = vars( tissue.group ) ) +
+    theme_classic() +
+    theme( plot.title = element_text( hjust = 0 ), 
+           axis.title.x = element_blank(),
+           axis.title.y = element_text( size = 12 * f, hjust = 0.5 ),  
+           
+           axis.text.x = element_text( size = 12 * f ),
+           axis.text.y = element_text( size = 12 * f ),  
+           
+           panel.border = element_blank(),             
+           panel.grid.major = element_blank(),         
+           panel.grid.minor = element_blank(),
+      
+           legend.text = element_text( size = 12 * f ),
+           legend.title = element_text( size = 12 * f ),
+           strip.text.x = element_text( size = 12 * f, vjust = 0 ),
+           strip.background = element_blank(),
+           plot.tag = element_text( size = 12 * f, hjust = 0 ),
+           plot.tag.position = c( 0.00, 0.037 ),
+           plot.margin = margin( 5.5, 5.5, 11.5, 5.5, unit = "pt" ) ) +   
+      
+    scale_fill_discrete( na.value = "grey" ) + 
     
-         legend.text = element_text( size = 12 * f ),
-         legend.title = element_text( size = 12 * f ),
-         strip.text.x = element_text( size = 12 * f, vjust = 0 ),
-         strip.background = element_blank(),
-         plot.tag = element_text( size = 12 * f, hjust = 0 ),
-         plot.tag.position = c( 0.00, 0.037 ),
-         plot.margin = margin( 5.5, 5.5, 11.5, 5.5, unit = "pt" ) ) +   
-    
-  scale_fill_discrete( na.value = "grey" ) + 
-  
-  annotate( "text", x = 3.5, y = -0.20, label = "host", size = 4 * f ) +
-  annotate( "text", x = 9.5, y = -0.20, label = "donor", size = 4 * f ) +
-  coord_cartesian( ylim = c( 0, NA ), clip = "off" ) +
-  labs( y = "Cell state proportion", fill = "Cell state", tag = "week" ) -> 
-  ggfig
+    annotate( "text", x = 3.5, y = -0.20, label = "host", size = 4 * f ) +
+    annotate( "text", x = 9.5, y = -0.20, label = "donor", size = 4 * f ) +
+    coord_cartesian( ylim = c( 0, NA ), clip = "off" ) +
+    labs( y = "Cell state proportion", fill = "Cell state", tag = "week" ) -> 
+    ggfig
 
   
   if ( plot ) {
-    ggpubr::ggexport( ggfig, filename = sprintf( 
-      "%s/%s/Fig_5A_cellstates_barchart.pdf", ps$RESULTS_PATH, celltype ), 
-      width = 21 * cm_to_in, height = 6 * cm_to_in )
+    fig_filename_start <- get_fig_fname_start( m = m_tisNA )
+    pdf_name <- sprintf( 
+      "%s/%s_data_Figure_5A_cellstates_barchart.pdf", 
+      get_path( "figs", ps = ps, celltype = celltype ), celltype )
+    ggexport_my( ggfig, filename = pdf_name, 
+                 width = 21 * cm_to_in, height = 6 * cm_to_in )
     
-    add_plot_to_figs_rda( gg_add = ggfig, gg_add_name = "gg.fig.5A",
-                          ps = ps, celltype = celltype )
-    
+    ## SOMETIMES due to accessing from multiple threads in parallel?
+    # Error in load(full_gg_figs_rda_name) : error reading from connection
+    try(
+      add_plot_to_figs_rda( 
+        m = m_tisNA,
+        gg_add = ggfig, gg_add_name = "gg.fig.5A",
+        gg_figs_rda_name = get_figs_rda_name( 
+          fig_filename_start = fig_filename_start, end = "gg_fig_5A.rda" ) )
+    )
   }
   return( ggfig )
 }
-

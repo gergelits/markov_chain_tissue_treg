@@ -1,55 +1,72 @@
 # calculate_HDI.r
 
-calculate_HDI <- function( tissue, celltype, ps,
-                           model.name, model.ver,
-                           setup.mcmc.fname,
-                           use_analysis_done_as_input = FALSE )
+if ( FALSE ) { 
+  source( "universal_script_setup.r" )
+  celltype <- "Treg"
+  source( "testing_model_setup.r", local = TRUE )
+}
+
+
+calculate_HDI <- function( m = NULL, chain = "max",
+                           use_analysis_done_as_input = FALSE )     
 {
-  if ( use_analysis_done_as_input ) {
-    output.tissue.dir <- 
-      sprintf( "%s/%s/%s", ps$ANALYSIS_DONE_PATH, celltype, tissue )
-  } else { output.tissue.dir <- 
-      sprintf( "%s/%s/%s", ps$ANALYSIS_PATH, celltype, tissue ) }
+  # NOTE: possible extension with ps$ANALYSIS_DONE_PATH
+  to_calc_HDI <- TRUE
+  if ( ! check_MCMC_convergence( m = m ) ) return( NULL ) 
   
-  model.dir <- sprintf( "%s_%i%s", model.name, 
-                        mcmc.chain.n * ( mcmc.iter.n - mcmc.warmup.n ),
-                        model.ver )
-  output.dir <- sprintf( "%s/%s", output.tissue.dir, model.dir )
+  # Now, successful MCMC simulation exists
+  model_dir <- get_path( "model_dir", m = m )
+  load( sprintf( "%s/parabio_fit%i.rda", model_dir, m$mcmc_pars$mcmc.iter.n ) )
+  if ( ! file.exists( file.path( model_dir, "chains_elapsed_time.csv" ) ) )
+  {
+    try( {
+      elapsed_time <- rstan::get_elapsed_time( parabio.fit )
+      elapsed_time %>% 
+        as_tibble %>% 
+        mutate( chain = 1 : nrow( . ) ) %>% 
+        dplyr::rename( t_warmup_s = warmup,
+                       t_sample_s = sample ) %>% 
+        dplyr::select( chain, everything() ) %>% 
+        write_csv( file.path( model_dir, "chains_elapsed_time.csv" ) )
+    } )
+  }
   
-  if ( file.exists( sprintf( "%s/parabio_fit_HDI.csv", output.dir ) ) ) {
-    # HDI csv exists (and thus also MCMC simulation exists)
-    cat( sprintf( 
-      "\nparabio_fit_HDI.csv already exists for %s.\nNo HDI calculation now.\n", 
-      tissue ) )
-  } else {
+  if ( chain == "max" )
+  {
+    parabio.fit.chain <- get_max_chain( m )
+    out_dir <- model_dir
+  } else {                           
+    # NOTE: Possible extension: check 3mad
+    # chain is an integer
+    stopifnot( chain %in% 1 : 20 )
+    parabio.fit.chain <- chain
+    out_dir <- get_path( "chain_dir", m = m, 
+                         sel_type = "each", sel_chains = chain )
+  }
+  
+  if ( file.exists( sprintf( "%s/parabio_fit_HDI.csv", out_dir ) ) )
+  {
+    to_calc_HDI <- FALSE
+    cat( sprintf( "\nparabio_fit_HDI.csv already exists for %s, chain %s.\n", 
+                  m$tissue, chain ) )
+  } 
     
-    # HDI csv does not exist
-  if ( file.exists( sprintf( "%s/parabio_fit%i.rda", output.dir, mcmc.iter.n ) ) & 
-       ( file.exists( sprintf( "%s/parabio_fit_print.txt", output.dir ) ) ) & 
-       ( file.info( sprintf( "%s/parabio_fit_print.txt", output.dir ) )$size > 2000 ) )
-    
-  { # MCMC simulation exists
-    print( sprintf( 
-      "%s -- parabio_fitXXXX.rda file exists and parabio_fit_print.txt ok", tissue ) )
-    load( sprintf( "%s/parabio_fit%i.rda", output.dir, mcmc.iter.n ) )
-    
-    parabio.fit.chain <- select_mcmc_chains( 
-      parabio.fit = parabio.fit, mcmc.chain.n = mcmc.chain.n, type = "max" )
-    
+  # from this point general for any parabio.fit.chain 
+  if ( to_calc_HDI ) {
     parabio.fit.sample <- rstan::extract( parabio.fit, permuted = FALSE )
-    
     dParamsHDI <- NULL
     for ( mp in dimnames( parabio.fit.sample )$parameters )
     {
+      parabio.fit.chain <- as.numeric( parabio.fit.chain )
       pf.sample <- as.vector( parabio.fit.sample[ , parabio.fit.chain, mp ] )
       pf.sample.mode <- mlv( pf.sample, method = "venter", type = "shorth" )
-      
-      HDI.80.50 <- get_HDI_4_values( 
-        pf.sample, credMass.big = 0.80, credMass.small = 0.5 )
-      
+      HDI.80.50 <- get_HDI_4_values( MCMC.sample = pf.sample, 
+                                     credMass.big = 0.80, 
+                                     credMass.small = 0.5 )
       dParamsHDI %>% 
         bind_rows( tibble( 
-          par = mp, mode = pf.sample.mode, 
+          par = mp, 
+          mode = pf.sample.mode, 
           hdi.80.lower = HDI.80.50[ 1 ] %>% as.numeric, 
           hdi.80.upper = HDI.80.50[ 4 ] %>% as.numeric,
           hdi.50.lower = HDI.80.50[ 2 ] %>% as.numeric, 
@@ -69,8 +86,8 @@ calculate_HDI <- function( tissue, celltype, ps,
         hdi.80.ratio = hdi.80.upper / hdi.80.lower,
         hdi.50.ratio = hdi.50.upper / hdi.50.lower ) ->
       dParamsHDI
+    
     dParamsHDI %>% 
-      write_csv( ., sprintf( "%s/parabio_fit_HDI.csv", output.dir ) )
-    }
+      write_csv( ., sprintf( "%s/parabio_fit_HDI.csv", out_dir ) ) 
   }
 }

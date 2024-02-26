@@ -1,24 +1,26 @@
 #  get_HDI.r
 
-get_HDI_4_values <- function( MCMC.sample, credMass.big = 0.80, credMass.small = 0.5 ) {
+get_HDI_4_values <- function( MCMC.sample, 
+                              credMass.big = 0.80, credMass.small = 0.5 )
+{
   credMass <- NULL
-  sorted.sample <- sort( MCMC.sample )
-  ciIdxInc.b <- ceiling( credMass.big * length( sorted.sample ) )
-  ciIdxInc.s <- ceiling( credMass.small * length( sorted.sample ) )
-  nCIs.b <- length( sorted.sample ) - ciIdxInc.b
-  nCIs.s <- length( sorted.sample ) - ciIdxInc.s
-  ciWidth.b <- rep( 0, nCIs.b )
-  ciWidth.s <- rep( 0, nCIs.s )
-  for ( i in 1:nCIs.b ) {
-    ciWidth.b[ i ] <- sorted.sample[ i + ciIdxInc.b ] - sorted.sample[ i ]
+  sorted_sample <- sort( MCMC.sample )
+  ciIdxInc_b <- ceiling( credMass.big * length( sorted_sample ) )
+  ciIdxInc_s <- ceiling( credMass.small * length( sorted_sample ) )
+  nCIs_b <- length( sorted_sample ) - ciIdxInc_b
+  nCIs_s <- length( sorted_sample ) - ciIdxInc_s
+  ciWidth_b <- rep( 0, nCIs_b )
+  ciWidth_s <- rep( 0, nCIs_s )
+  for ( i in 1 : nCIs_b ) {
+    ciWidth_b[ i ] <- sorted_sample[ i + ciIdxInc_b ] - sorted_sample[ i ]
   }
-  for ( i in 1:nCIs.s ) {
-    ciWidth.s[ i ] <- sorted.sample[ i + ciIdxInc.s ] - sorted.sample[ i ]
+  for ( i in 1 : nCIs_s ) {
+    ciWidth_s[ i ] <- sorted_sample[ i + ciIdxInc_s ] - sorted_sample[ i ]
   }
-  HDImin.b <- sorted.sample[ which.min( ciWidth.b ) ]
-  HDImax.b <- sorted.sample[ which.min( ciWidth.b ) + ciIdxInc.b ]
-  HDImin.s <- sorted.sample[ which.min( ciWidth.s ) ]
-  HDImax.s <- sorted.sample[ which.min( ciWidth.s ) + ciIdxInc.s ]
-  HDIlim.4 <- sort( c( HDImin.b, HDImin.s, HDImax.s, HDImax.b ) )
-  return( HDIlim.4 )
+  HDImin_b <- sorted_sample[ which.min( ciWidth_b ) ]
+  HDImax_b <- sorted_sample[ which.min( ciWidth_b ) + ciIdxInc_b ]
+  HDImin_s <- sorted_sample[ which.min( ciWidth_s ) ]
+  HDImax_s <- sorted_sample[ which.min( ciWidth_s ) + ciIdxInc_s ]
+  HDIlim_4 <- sort( c( HDImin_b, HDImin_s, HDImax_s, HDImax_b ) )
+  return( HDIlim_4 )
 }

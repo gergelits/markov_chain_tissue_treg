@@ -1,35 +1,34 @@
 # group_flows.r
 
-read.and.clean.total.counts.data <- function( ps, celltype )
+read_and_clean_total_counts_data <- function( 
+    ps, celltype, count_type = "Median" )
 {
   read_csv( sprintf( "%s/Total_counts/parabiosis_model_input_%s_counts.csv",
                      ps$PROCESSED_PATH, celltype ) ) %>% 
     dplyr::rename( tissue = "Tissue",
-                   total.count = "Mean",
+                   total.count = count_type,
                    total.count.sd = `Standard deviation` ) -> dTotal.counts
   return( dTotal.counts )
 }
 
 
-get.flows.all.tissues <- function( ps, celltype, flow.part,
-                                   model.name, model.ver, 
-                                   setup.mcmc.fname )
+get_flows_all_tissues <- function( m_tisNA, ps, celltype, flow.part,
+                                   model_name, model_ver, 
+                                   mcmc_pars )
 {
-  TISSUES <- get_parabiosis_const()$TISSUES 
-  
   if ( flow.part == "exit" ) { 
-    get.flow.table <- get.exit.flow.table } else {
-      get.flow.table <- get.entry.flow.table }
-  tissue.s <- TISSUES[ !( TISSUES %in% c( "IEL", "LPL" ) ) ]
-  model.dir <- sprintf( "%s_%i%s", model.name, 
-                        mcmc.chain.n * ( mcmc.iter.n - mcmc.warmup.n ),
-                        model.ver )
+    get.flow.table <- get_exit_flow_table } else {
+      get.flow.table <- get_entry_flow_table }
+  tissues <- get_pmc()$TISSUES.NO.GUT
+  model_dir_r <- get_path( "model_dir_r", m = m_tisNA,
+                           model_name = model_name, model_ver = model_ver,
+                           mcmc_pars = mcmc_pars )
   flow.table.all.tissues <- NULL
-  for ( i.tissue in tissue.s )
+  for ( i.tissue in tissues )
   {  
     i.tissue.flow.table <- 
       get.flow.table( ps = ps, celltype = celltype, 
-                      tissue = i.tissue, model.dir.name = model.dir ) 
+                      tissue = i.tissue, model_dir_r = model_dir_r ) 
     if ( !is.null( i.tissue.flow.table ) ) {
       i.tissue.flow.table %>% 
         mutate( tissue = i.tissue ) ->
@@ -43,20 +42,23 @@ get.flows.all.tissues <- function( ps, celltype, flow.part,
 }
 
 
-get.tissues.average.flows <- function( ps, celltype, flow.part,
-                                       model.name, model.ver, 
-                                       setup.mcmc.fname )
+get_tissue_average_flows <- function( m_tisNA, ps, celltype, flow.part,
+                                      model_name, model_ver, 
+                                      mcmc_pars )
 {
-  flow.table <- get.flows.all.tissues( 
-    ps = ps, celltype = celltype, flow.part = flow.part,
-    model.name = model.name, model.ver = model.ver, 
-    setup.mcmc.fname = setup.mcmc.fname )  
-  total.counts.table <- read.and.clean.total.counts.data(                      
+  flow.table <- get_flows_all_tissues( 
+    m_tisNA = m_tisNA, ps = ps, celltype = celltype, flow.part = flow.part,
+    model_name = model_name, model_ver = model_ver, 
+    mcmc_pars = mcmc_pars )
+  total.counts.table <- read_and_clean_total_counts_data(                      
     ps = ps, celltype = celltype )
   
+  if ( all( dim( flow.table ) == c ( 0, 0 ) ) ) {
+    return( tibble() )
+  }
   
-  flow.table %>%
-    left_join( ., get_parabiosis_const()$dTissueAllOrderedGroup.f %>%                                 
+  flow.table %>% 
+    left_join( ., get_pmc()$dTissueAllOrderedGroup.f %>%                                 
                  dplyr::select( tissue.all, tissue.group, f.tissue.group ), 
                by = c( "tissue" = "tissue.all" ) ) %>%
     left_join( ., total.counts.table %>% dplyr::select( tissue, total.count ), 

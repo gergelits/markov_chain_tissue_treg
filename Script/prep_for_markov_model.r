@@ -1,7 +1,7 @@
 # prep_for_markov_model.r
 
 # function for setting different random seeds on each code section
-set.seed.here.visible <- function( seed.base, seed.char )
+set_seed_here_visible <- function( seed.base, seed.char )
 {
   seed.add <- strtoi( substr( digest( seed.char, "xxhash32" ), 2, 8 ), 16 )
   seed.new <- seed.base + seed.add
@@ -11,7 +11,7 @@ set.seed.here.visible <- function( seed.base, seed.char )
 
 
 # function for removing zeros from model data
-model.x.remove.zeros <- function( x )
+model_x_remove_zeros <- function( x )
 {
   x.pos.min <- min( x[ x > 0 ] )
   t( apply( x, 1, function( xr )
@@ -26,7 +26,7 @@ model.x.remove.zeros <- function( x )
 
 
 # universal week alpha estimation
-estimate.week.alpha.simple.n <- function( parabio.data, w, n.tis, pb )
+estimate_week_alpha_simple_n <- function( parabio.data, w, n.tis, pb )
 {
   parabio.data.week.ids <- parabio.data[ parabio.data$week == w, "mouse" ]
   parabio.data.week.ids.in3 <- 
@@ -34,6 +34,7 @@ estimate.week.alpha.simple.n <- function( parabio.data, w, n.tis, pb )
       table( parabio.data.week.ids ) == n.tis ] %>% 
     as.numeric
   week.mouse <- parabio.data.week.ids.in3
+  if( length( week.mouse ) == 0 ) return( NULL )
   
   if ( w == 0 )                                                               
     week.popul <- gsub( pattern = "\\.(.*)\\.", 
@@ -47,10 +48,10 @@ estimate.week.alpha.simple.n <- function( parabio.data, w, n.tis, pb )
         week.popul                                                     
       ] ) )                                                           
     ) )
-    rownames( x ) <- week.mouse
+    
     colnames( x ) <- week.popul
     x <- sweep( x, 1, rowSums( x ), "/" )
-    model.x.remove.zeros( x )                                              
+    model_x_remove_zeros( x )                                              
   } )
   names( week.model.x ) <- pb$pb.tissue
   

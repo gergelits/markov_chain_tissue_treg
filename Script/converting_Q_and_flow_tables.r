@@ -1,10 +1,12 @@
 # converting_Q_and_flow_tables.r
 
-get.exit.flow.table <- function( ps, celltype, tissue, model.dir.name )
+get_exit_flow_table <- function( ps, celltype, tissue, model_dir_r )
 {
-  exit.flow.file <- sprintf( 
-    "%s/%s/%s/%s/parabio_fit_HDI.csv",
-    ps$ANALYSIS_PATH, celltype, tissue, model.dir.name )
+  model_dir <- get_path( "model_dir", m = NULL,
+                         ps = ps, celltype = celltype, tissue = tissue,
+                         model_dir_r = model_dir_r )
+  exit.flow.file <- sprintf( "%s/parabio_fit_HDI.csv", model_dir )
+  
   if( file.exists( exit.flow.file ) ) {
     read_csv( exit.flow.file, show_col_types = FALSE ) %>% 
     dplyr::select( par, mode ) %>% 
@@ -27,11 +29,30 @@ get.exit.flow.table <- function( ps, celltype, tissue, model.dir.name )
 }
 
 
-get.al_ <- function( ps, celltype, tissue, model.dir.name )
+get_al_ <- function( model = NULL, m = NULL,
+                     ps, celltype, tissue, model_dir_r = NA,
+                     # if model_dir_r is NA:
+                     model_name, model_ver, mcmc_pars )
 {
-  al_.file <- sprintf( 
-    "%s/%s/%s/%s/model_vars/al_.csv", 
-    ps$ANALYSIS_PATH, celltype, tissue, model.dir.name )
+  if ( is.null( m ) ) { m <- model }
+  if ( ! is.null( m ) ) {
+    al_.file <- sprintf( "%s/al_.csv",  get_path( "model_vars_dir", m = m ) )
+  } else {
+    if ( is.na( model_dir_r ) ) {
+      model_vars_dir <- get_path( "model_vars_dir", m = m, ps = ps, 
+                                  celltype = celltype, tissue = tissue,
+                                  model_name = model_name, model_ver = model_ver,
+                                  mcmc_pars = mcmc_pars )
+      al_.file <- sprintf( "%s/al_.csv", model_vars_dir )
+      } else {
+        analysis_tissue_dir <- get_path( 
+          "analysis_tissue_dir", ps = ps, 
+          celltype = celltype, tissue = tissue )
+        al_.file <- sprintf( "%s/%s/model_vars/al_.csv", 
+                             analysis_tissue_dir, model_dir_r )  
+      }
+    }
+  
   if ( ! file.exists( al_.file ) )
     { al_ <- NULL } else { 
       al_ <- read.csv( al_.file )$x[ 1 : 6 ]
@@ -40,7 +61,39 @@ get.al_ <- function( ps, celltype, tissue, model.dir.name )
 }
 
 
-convert.exit.flow.table.into.entry.flow.table <- function( exit.flow.table, 
+get_al_9 <- function( model = NULL, m = NULL,
+                     ps, celltype, tissue, model_dir_r = NA,
+                     # if model_dir_r is NA:
+                     model_name, model_ver, mcmc_pars )
+{
+  if ( is.null( m ) ) { m <- model }
+  if ( ! is.null( m ) ) {
+    al_.file <- sprintf( "%s/al_.csv",  get_path( "model_vars_dir", m = m ) )
+  } else {
+    if ( is.na( model_dir_r ) ) {
+      model_vars_dir <- get_path( "model_vars_dir", m = m, ps = ps, 
+                                  celltype = celltype, tissue = tissue,
+                                  model_name = model_name, model_ver = model_ver,
+                                  mcmc_pars = mcmc_pars )
+      al_.file <- sprintf( "%s/al_.csv", model_vars_dir )
+    } else {
+      analysis_tissue_dir <- get_path( 
+        "analysis_tissue_dir", ps = ps, 
+        celltype = celltype, tissue = tissue )
+      al_.file <- sprintf( "%s/%s/model_vars/al_.csv", 
+                           analysis_tissue_dir, model_dir_r )  
+    }
+  }
+  
+  if ( ! file.exists( al_.file ) )
+  { al_9 <- NULL } else { 
+    al_9 <- read.csv( al_.file )$x[ 1 : 9 ]
+  }
+  return( al_9 )  
+}
+
+
+convert_exit_flow_table_into_entry_flow_table <- function( exit.flow.table, 
                                                            al_ )
 {
   if ( is.null( al_ ) | ( 
@@ -66,15 +119,15 @@ convert.exit.flow.table.into.entry.flow.table <- function( exit.flow.table,
 }
 
 
-get.entry.flow.table <- function( ps, celltype, tissue, model.dir.name )
+get_entry_flow_table <- function( ps, celltype, tissue, model_dir_r )
 {
   entry.flow.table <- 
-    convert.exit.flow.table.into.entry.flow.table( 
-      exit.flow.table = get.exit.flow.table( 
+    convert_exit_flow_table_into_entry_flow_table( 
+      exit.flow.table = get_exit_flow_table( 
         ps = ps, celltype = celltype, tissue = tissue, 
-        model.dir.name = model.dir.name ), 
-      al_ = get.al_( ps = ps, celltype = celltype, tissue = tissue,
-                     model.dir.name = model.dir.name ) 
+        model_dir_r = model_dir_r ), 
+      al_ = get_al_( ps = ps, celltype = celltype, tissue = tissue,
+                     model_dir_r = model_dir_r ) 
     )
   return( entry.flow.table )
 }
